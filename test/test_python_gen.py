@@ -1521,6 +1521,7 @@ namespace ns3
 
 struct A
     "Sample struct doc."
+
     a String
         "Sample field doc."
 
@@ -1550,25 +1551,35 @@ namespace ns3
 
 import ns4
 
+@ns4.TestFullHashRedactor
+alias TestAlias = String
+
 patch struct A
 
     b Int64
+        @ns4.TestFullHashRedactor
+        @ns4.Deprecated
         @ns4.InternalOnly
         "A patched, internal-only field."
 
     c String?
+        @ns4.TestFullBlotRedactor
+        @ns4.Preview
         @ns4.InternalOnly
 
     d List(X)
+        @ns4.TestFullHashRedactor
         @ns4.InternalOnly
 
     e Map(String, String?)
+        @ns4.TestFullBlotRedactor
         @ns4.InternalOnly
 
     f X
         @ns4.InternalOnly
 
     g Int64
+        @ns4.TestFullBlotRedactor
         @ns4.AlphaOnly
 
 struct X
@@ -1589,6 +1600,7 @@ patch struct B
 patch union_closed U
 
     t1 String
+        @ns4.TestPartialHashRedactor
         @ns4.InternalOnly
 
     t2 List(X)
@@ -1597,11 +1609,12 @@ patch union_closed U
     t3 List(X)
 
     t_void
+        @ns4.TestFullBlotRedactor
         @ns4.TestVoidField
 
 patch union UOpen
 
-    t5 String
+    t5 TestAlias
         @ns4.InternalOnly
 
     t6 String
@@ -1610,11 +1623,13 @@ patch union UOpen
 patch struct Resource
 
     x X
+        @ns4.TestPartialBlotRedactor
         @ns4.InternalOnly
 
 patch struct File
 
     y String
+        @ns4.TestPartialHashRedactor
         @ns4.InternalOnly
 """
 
@@ -1624,10 +1639,19 @@ namespace ns4
 annotation InternalOnly = Omitted("internal")
 annotation AlphaOnly = Omitted("alpha")
 annotation TestVoidField = Omitted("test_void_field")
+
+annotation Deprecated = Deprecated()
+annotation Preview = Preview()
+
+
+annotation TestFullHashRedactor = HashRedacted()
+annotation TestFullBlotRedactor = BlotRedacted()
+annotation TestPartialHashRedactor = HashRedacted(".*hash.*")
+annotation TestPartialBlotRedactor = BlotRedacted(".*blot.*")
 """
 
 
-class TestTaggedGeneratedPython(unittest.TestCase):
+class TestAnnotationsGeneratedPython(unittest.TestCase):
 
     def setUp(self):
 

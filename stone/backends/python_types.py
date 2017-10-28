@@ -155,7 +155,17 @@ class PythonTypesBackend(CodeBackend):
             self.emit_wrapped_text(
                 self.process_doc(alias.doc, self._docf), prefix='# ')
         validator_name = '{}_validator'.format(alias.name)
-        self.emit('{} = {}'.format(validator_name, v))
+
+        # If the validator is a reference to an alias or defined type, we need to deep copy
+        # the validator object so we don't attach the redactor to a validator used in a
+        # larger context
+        if alias.redactor and (is_user_defined_type(alias.data_type) or is_alias(alias.data_type)):
+            self.emit('{} = copy.copy({})'.format(validator_name, v))
+        else:
+            self.emit('{} = {}'.format(validator_name, v))
+        if alias.redactor:
+            self._generate_redactor(validator_name, alias.redactor)
+
         unwrapped_dt, _ = unwrap_aliases(alias)
         if is_user_defined_type(unwrapped_dt):
             # If the alias is to a composite type, we want to alias the
@@ -312,7 +322,14 @@ class PythonTypesBackend(CodeBackend):
             field_name = fmt_var(field.name)
             validator_name = generate_validator_constructor(ns, field.data_type)
             full_validator_name = '{}._{}_validator'.format(class_name, field_name)
-            self.emit('{} = {}'.format(full_validator_name, validator_name))
+            is_reference = is_user_defined_type(field.data_type) or is_alias(field.data_type)
+            if field.redactor and is_reference:
+                self.emit('{} = copy.copy({})'.format(full_validator_name, validator_name))
+            else:
+                self.emit('{} = {}'.format(full_validator_name, validator_name))
+
+            if field.redactor:
+                self._generate_redactor(full_validator_name, field.redactor)
 
         # Generate `_all_field_names_` and `_all_fields_` for every omitted caller (and public).
         # As an edge case, we union omitted callers with None in the case when the object has no
@@ -703,7 +720,14 @@ class PythonTypesBackend(CodeBackend):
             validator_name = generate_validator_constructor(
                 ns, field.data_type)
             full_validator_name = '{}._{}_validator'.format(class_name, field_name)
-            self.emit('{} = {}'.format(full_validator_name, validator_name))
+            is_reference = is_user_defined_type(field.data_type) or is_alias(field.data_type)
+            if field.redactor and is_reference:
+                self.emit('{} = copy.copy({})'.format(full_validator_name, validator_name))
+            else:
+                self.emit('{} = {}'.format(full_validator_name, validator_name))
+
+            if field.redactor:
+                self._generate_redactor(full_validator_name, field.redactor)
 
         # generate _all_fields_ for each omitted caller (and public)
         child_omitted_callers = data_type.get_all_omitted_callers()
@@ -869,6 +893,12 @@ class PythonTypesBackend(CodeBackend):
                 self.emit("'{}': {},".format(route.name, var_name))
         self.emit()
 
+    def _generate_redactor(self, validator_name, redactor):
+        regex = "'{}'".format(redactor.regex) if redactor.regex else 'None'
+        if isinstance(redactor, RedactHash):
+            self.emit("{}._redact = bv.HashRedactor({})".format(validator_name, regex))
+        elif isinstance(redactor, RedactBlot):
+            self.emit("{}._redact = bv.BlotRedactor({})".format(validator_name, regex))
 
 def generate_validator_constructor(ns, data_type):
     """

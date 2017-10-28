@@ -24,6 +24,7 @@ from ..ir import (
     Boolean,
     Bytes,
     DataType,
+    Deprecated,
     DeprecationInfo,
     Float32,
     Float64,
@@ -33,7 +34,10 @@ from ..ir import (
     Map,
     Nullable,
     Omitted,
+    Preview,
     ParameterError,
+    RedactedBlot,
+    RedactedHash,
     String,
     Struct,
     StructField,
@@ -77,7 +81,11 @@ doc_ref_val_re = re.compile(
 
 # Defined Annotations
 ANNOTATION_CLASS_BY_STRING = {
+    'Deprecated': Deprecated,
     'Omitted': Omitted,
+    'Preview': Preview,
+    'RedactedBlot': RedactedBlot,
+    'RedactedHash': RedactedHash,
 }
 
 
@@ -157,6 +165,7 @@ class IRGenerator(object):
         self._populate_route_attributes()
         self._populate_examples()
         self._validate_doc_refs()
+        self._validate_annotations()
 
         self.api.normalize()
 
@@ -323,7 +332,7 @@ class IRGenerator(object):
         namespace = self.api.ensure_namespace(env.namespace_name)
 
         if item.annotation_type not in ANNOTATION_CLASS_BY_STRING:
-            raise InvalidSpec('Unknown Annotation type %s.' %
+            raise InvalidSpec("Unknown Annotation type '%s'." %
                               item.annotation_type, item.lineno, item.path)
 
         annotation_class = ANNOTATION_CLASS_BY_STRING[item.annotation_type]
@@ -1142,6 +1151,40 @@ class IRGenerator(object):
         while isinstance(data_type, Alias) or isinstance(data_type, Nullable):
             if hasattr(data_type, 'Omitted_group') and data_type.Omitted_group:
                 raise InvalidSpec('An Omitted group has already been defined for %s by %s' %
+                                  (name, data_type.name), *loc)
+
+            data_type = data_type.data_type
+
+    def _validate_annotations(self):
+        """
+        Validates that all annotations are attached to proper types and that no field
+        has conflicting inherited or direct annotations. We need to go through all reference
+        chains to make sure we don't override a redactor set on a parent alias or type
+        """
+        for namespace in self.api.namespaces.values():
+            for data_type in namespace.data_types:
+                for field in data_type.fields:
+                    if field.redactor:
+                        self._validate_object_can_be_annotated(field)
+
+            for alias in namespace.aliases:
+                if alias.redactor:
+                    self._validate_object_can_be_annotated(alias)
+
+    def _validate_object_can_be_annotated(self, annotated_object):
+        """
+        Validates that object type can be annotated and object does not have
+        conflicting annotations.
+        """
+        data_type = annotated_object.data_type
+        name = annotated_object.name
+        loc = annotated_object._ast_node.lineno, annotated_object._ast_node.path
+        while isinstance(data_type, Alias) or isinstance(data_type, Nullable):
+            if hasattr(data_type, 'redactor') and data_type.redactor:
+                raise InvalidSpec('A redactor has already been defined for %s by %s' %
+                                  (name, data_type.name), *loc)
+            if hasattr(data_type, 'omission_group') and data_type.omission_group:
+                raise InvalidSpec('An omission group has already been defined for %s by %s' %
                                   (name, data_type.name), *loc)
 
             data_type = data_type.data_type
